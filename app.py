@@ -30,33 +30,55 @@ st.markdown("""
 @st.cache_resource
 def download_nltk_data():
     try:
-        # Create nltk_data directory if it doesn't exist
-        nltk_dir = os.path.join(os.path.expanduser("~"), "nltk_data")
+        # Create nltk_data directory in the current working directory
+        nltk_dir = os.path.join(os.getcwd(), "nltk_data")
         if not os.path.exists(nltk_dir):
             os.makedirs(nltk_dir)
         
         # Set NLTK data path
         nltk.data.path.append(nltk_dir)
         
-        # Download required NLTK data
-        required_data = ['punkt', 'stopwords', 'wordnet', 'averaged_perceptron_tagger']
+        # Download all required NLTK data
+        required_data = [
+            'punkt',         # For tokenization
+            'stopwords',     # For stop words
+            'wordnet',      # For lemmatization
+            'averaged_perceptron_tagger',  # For POS tagging
+            'omw-1.4'       # Open Multilingual WordNet
+        ]
         
         for resource in required_data:
             try:
-                nltk.data.find(f'tokenizers/{resource}')
+                nltk.data.find(resource)
             except LookupError:
-                with st.spinner(f'Downloading required NLTK data ({resource})...'):
+                with st.spinner(f'Downloading NLTK data: {resource}...'):
                     nltk.download(resource, download_dir=nltk_dir, quiet=True)
-                    
-        # Additional download for punkt_tab if needed
+        
+        # Special handling for punkt_tab
         try:
-            nltk.data.find('tokenizers/punkt/PY3/english.pickle')
+            nltk.data.find('tokenizers/punkt')
         except LookupError:
             with st.spinner('Downloading punkt tokenizer data...'):
                 nltk.download('punkt', download_dir=nltk_dir, quiet=True)
                 
+        # Verify punkt_tab is available
+        try:
+            nltk.data.find('tokenizers/punkt/PY3/english.pickle')
+        except LookupError:
+            # If still not found, try alternative download method
+            import urllib.request
+            import shutil
+            punkt_url = "https://raw.githubusercontent.com/nltk/nltk_data/gh-pages/packages/tokenizers/punkt.zip"
+            punkt_dir = os.path.join(nltk_dir, "tokenizers", "punkt")
+            os.makedirs(punkt_dir, exist_ok=True)
+            zip_path = os.path.join(punkt_dir, "punkt.zip")
+            urllib.request.urlretrieve(punkt_url, zip_path)
+            shutil.unpack_archive(zip_path, punkt_dir)
+            os.remove(zip_path)
+            
     except Exception as e:
         st.error(f"Error downloading NLTK data: {str(e)}")
+        st.stop()  # Stop execution if NLTK data can't be loaded
 # Call this at the very beginning
 download_nltk_data()
 
