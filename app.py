@@ -30,23 +30,33 @@ st.markdown("""
 @st.cache_resource
 def download_nltk_data():
     try:
-        nltk.data.find('tokenizers/punkt')
-    except LookupError:
-        with st.spinner('Downloading required language data (punkt)...'):
-            nltk.download('punkt', quiet=True)
-    
-    try:
-        nltk.data.find('corpora/stopwords')
-    except LookupError:
-        with st.spinner('Downloading required language data (stopwords)...'):
-            nltk.download('stopwords', quiet=True)
-
-    try:
-        nltk.data.find('tokenizers/punkt/PY3/english.pickle')
-    except LookupError:
-        with st.spinner('Finalizing NLTK data download...'):
-            nltk.download('punkt', quiet=True)
-
+        # Create nltk_data directory if it doesn't exist
+        nltk_dir = os.path.join(os.path.expanduser("~"), "nltk_data")
+        if not os.path.exists(nltk_dir):
+            os.makedirs(nltk_dir)
+        
+        # Set NLTK data path
+        nltk.data.path.append(nltk_dir)
+        
+        # Download required NLTK data
+        required_data = ['punkt', 'stopwords', 'wordnet', 'averaged_perceptron_tagger']
+        
+        for resource in required_data:
+            try:
+                nltk.data.find(f'tokenizers/{resource}')
+            except LookupError:
+                with st.spinner(f'Downloading required NLTK data ({resource})...'):
+                    nltk.download(resource, download_dir=nltk_dir, quiet=True)
+                    
+        # Additional download for punkt_tab if needed
+        try:
+            nltk.data.find('tokenizers/punkt/PY3/english.pickle')
+        except LookupError:
+            with st.spinner('Downloading punkt tokenizer data...'):
+                nltk.download('punkt', download_dir=nltk_dir, quiet=True)
+                
+    except Exception as e:
+        st.error(f"Error downloading NLTK data: {str(e)}")
 # Call this at the very beginning
 download_nltk_data()
 
