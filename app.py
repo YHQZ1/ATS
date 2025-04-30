@@ -23,6 +23,9 @@ st.markdown("""
         max-width: 1200px;
         margin: 0 auto;
     }
+    .stProgress > div > div > div {
+        background-color: #1f497d;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -54,31 +57,16 @@ def download_nltk_data():
                 with st.spinner(f'Downloading NLTK data: {resource}...'):
                     nltk.download(resource, download_dir=nltk_dir, quiet=True)
         
-        # Special handling for punkt_tab
+        # Verify punkt tokenizer is available
         try:
             nltk.data.find('tokenizers/punkt')
         except LookupError:
-            with st.spinner('Downloading punkt tokenizer data...'):
-                nltk.download('punkt', download_dir=nltk_dir, quiet=True)
-                
-        # Verify punkt_tab is available
-        try:
-            nltk.data.find('tokenizers/punkt/PY3/english.pickle')
-        except LookupError:
-            # If still not found, try alternative download method
-            import urllib.request
-            import shutil
-            punkt_url = "https://raw.githubusercontent.com/nltk/nltk_data/gh-pages/packages/tokenizers/punkt.zip"
-            punkt_dir = os.path.join(nltk_dir, "tokenizers", "punkt")
-            os.makedirs(punkt_dir, exist_ok=True)
-            zip_path = os.path.join(punkt_dir, "punkt.zip")
-            urllib.request.urlretrieve(punkt_url, zip_path)
-            shutil.unpack_archive(zip_path, punkt_dir)
-            os.remove(zip_path)
+            nltk.download('punkt', download_dir=nltk_dir, quiet=True)
             
     except Exception as e:
         st.error(f"Error downloading NLTK data: {str(e)}")
-        st.stop()  # Stop execution if NLTK data can't be loaded
+        st.stop()
+
 # Call this at the very beginning
 download_nltk_data()
 
@@ -105,11 +93,11 @@ EDUCATION_TERMS = [
 @st.cache_data
 def extract_skills_and_keywords(text):
     try:
+        if not text or len(text.strip()) < 50:
+            return [], {}
+            
         text = text.lower()
         text = re.sub(r'\s+', ' ', text)
-        
-        # Ensure NLTK data is available
-        download_nltk_data()
         
         categorized_skills = {category: {} for category in SKILL_CATEGORIES}
         
@@ -189,6 +177,9 @@ def extract_skills_and_keywords(text):
 
 def calculate_match_percentage(resume_text, jd_text):
     try:
+        if not resume_text or not jd_text:
+            return 0.0
+            
         resume_keywords, resume_categories = extract_skills_and_keywords(resume_text)
         jd_keywords, jd_categories = extract_skills_and_keywords(jd_text)
         
@@ -238,7 +229,6 @@ def calculate_match_percentage(resume_text, jd_text):
      
         if experience:
             exp_words = experience.lower()
- 
             years_pattern = r'\b\d+\s*(?:\+\s*)?years?\b'
             if re.search(years_pattern, exp_words):
                 exp_edu_score += 0.5
@@ -260,27 +250,37 @@ def calculate_match_percentage(resume_text, jd_text):
         return round(final_score * 100, 1)
         
     except Exception as e:
-        print(f"Error in calculate_match_percentage: {str(e)}")
-        return 50
+        st.error(f"Error in match calculation: {str(e)}")
+        return 0.0
 
 def extract_pdf_text(uploaded_file):
-    reader = pdf.PdfReader(uploaded_file)
-    text = ""
-    for page in reader.pages:
-        text += page.extract_text()
-    return text
+    try:
+        if not uploaded_file or uploaded_file.size == 0:
+            return ""
+            
+        reader = pdf.PdfReader(uploaded_file)
+        text = ""
+        for page in reader.pages:
+            page_text = page.extract_text()
+            if page_text:
+                text += page_text + "\n"
+        return text.strip()
+    except Exception as e:
+        st.error(f"Error reading PDF: {str(e)}")
+        return ""
 
 def analyze_education(text):
+    if not text:
+        return ""
+        
     text_lower = text.lower()
-    
     sentences = text_lower.split('.')
     edu_sentences = [s.strip() for s in sentences if any(term in s for term in EDUCATION_TERMS)]
     
     is_cs = any(term in text_lower for term in ['computer science', 'cs', 'information technology', 'it', 'software engineering'])
     
     if edu_sentences:
-        main_edu = edu_sentences[0]  # Take the first education-related sentence
-    
+        main_edu = edu_sentences[0]
         if is_cs and 'computer science' not in main_edu and 'cs' not in main_edu:
             main_edu += ' (Computer Science/IT background)'
         return main_edu
@@ -291,6 +291,9 @@ def analyze_education(text):
     return ""
 
 def analyze_experience(text):
+    if not text:
+        return ""
+        
     text_lower = text.lower()
     sentences = [s.strip() for s in text_lower.split('.')]
 
@@ -310,7 +313,7 @@ def analyze_experience(text):
     
     years_exp = 0
     for sentence in experiences['work']:
-        year_matches = re.findall(r'\d+\+?\s*(?:year|yr)', sentence)  # Match patterns like "5+ years" or "3 yr"
+        year_matches = re.findall(r'\d+\+?\s*(?:year|yr)', sentence)
         if year_matches:
             try:
                 years_exp = max(years_exp, int(re.findall(r'\d+', year_matches[0])[0]))
@@ -331,111 +334,126 @@ def analyze_experience(text):
     return ' | '.join(experience_summary) if experience_summary else ""
 
 def get_key_strengths(resume_keywords, jd_keywords):
+    if not resume_keywords or not jd_keywords:
+        return []
     strengths = list(set(resume_keywords) & set(jd_keywords))
     return sorted(strengths, key=lambda x: len(x), reverse=True)[:5]
 
 def analyze_projects(text):
+    if not text:
+        return []
+        
     text_lower = text.lower()
     sentences = [s.strip() for s in text_lower.split('.')]
-    
     projects = [s for s in sentences if any(word in s for word in ['project', 'developed', 'built', 'created', 'implemented'])]
-    return projects
+    return projects[:3]  # Return max 3 projects
 
 def analyze_achievements(text):
+    if not text:
+        return []
+        
     text_lower = text.lower()
     sentences = [s.strip() for s in text_lower.split('.')]
-    
     achievements = [s for s in sentences if any(word in s for word in 
         ['achieved', 'awarded', 'won', 'recognized', 'selected', 'ranked', 'improved', 
          'increased', 'decreased', 'reduced', 'saved', 'delivered', 'led', 'managed'])]
-    return achievements
+    return achievements[:3]  # Return max 3 achievements
 
 @st.cache_data 
 def get_ats_feedback(resume_text, jd_text):
-    resume_keywords, resume_categories = extract_skills_and_keywords(resume_text)
-    jd_keywords, jd_categories = extract_skills_and_keywords(jd_text)
-    
-    missing_keywords = list(set(jd_keywords) - set(resume_keywords))
-    key_strengths = get_key_strengths(resume_keywords, jd_keywords)
-    
-    match_percentage = calculate_match_percentage(resume_text, jd_text)
-    
-    education = analyze_education(resume_text)
-    experience = analyze_experience(resume_text)
-    projects = analyze_projects(resume_text)
-    achievements = analyze_achievements(resume_text)
+    try:
+        if not resume_text or len(resume_text.strip()) < 100:
+            return json.dumps({"error": "Resume text is too short or empty"})
+        if not jd_text or len(jd_text.strip()) < 50:
+            return json.dumps({"error": "Job description is too short or empty"})
+            
+        resume_keywords, resume_categories = extract_skills_and_keywords(resume_text)
+        jd_keywords, jd_categories = extract_skills_and_keywords(jd_text)
+        
+        missing_keywords = list(set(jd_keywords) - set(resume_keywords))
+        key_strengths = get_key_strengths(resume_keywords, jd_keywords)
+        
+        match_percentage = calculate_match_percentage(resume_text, jd_text)
+        
+        education = analyze_education(resume_text)
+        experience = analyze_experience(resume_text)
+        projects = analyze_projects(resume_text)
+        achievements = analyze_achievements(resume_text)
 
-    profile_parts = []
-    if education:
-        profile_parts.append(education.strip().capitalize())
-    if experience:
-        profile_parts.append(experience)
-    profile_summary = ' | '.join(profile_parts)
-    
-    skill_gaps = {}
-    for category in SKILL_CATEGORIES:
-        jd_skills = set(jd_categories.get(category, []))
-        resume_skills = set(resume_categories.get(category, []))
-        if jd_skills:
-            skill_gaps[category] = list(jd_skills - resume_skills)
-    
-    category_matches = {}
-    for category in SKILL_CATEGORIES:
-        jd_skills = set(jd_categories.get(category, []))
-        resume_skills = set(resume_categories.get(category, []))
-        if jd_skills:
-            match = len(jd_skills & resume_skills) / len(jd_skills) * 100
-            category_matches[category] = round(match, 1)
-    
-    recommendations = []
-    
-    if not education:
-        recommendations.append("Add your educational background prominently")
-    elif 'computer science' in education.lower() or 'cs' in education.lower():
-        recommendations.append("Your CS background is relevant - highlight any specialized coursework or projects")
-    
-    if not experience:
-        recommendations.append("Add any internships, projects, or relevant work experience")
-    elif 'internship' in experience.lower():
-        recommendations.append("Quantify your internship achievements with specific metrics")
-    elif any(str(i) in experience.lower() for i in range(1, 6)):
-        recommendations.append("Highlight leadership roles and team contributions in your experience")
-    
-    if not projects:
-        recommendations.append("Add relevant projects showcasing your technical skills")
-    elif len(projects) < 3:
-        recommendations.append("Consider adding more projects demonstrating your expertise")
-    
-    if not achievements:
-        recommendations.append("Add quantifiable achievements and metrics to strengthen your impact")
-    
-    tech_categories = ['Programming Languages', 'Web Technologies', 'Database', 'Cloud & DevOps']
-    missing_tech = [cat for cat in tech_categories if cat in skill_gaps and skill_gaps[cat]]
-    
-    if missing_tech:
-        for category in missing_tech[:2]:  # Suggest skills from top 2 categories
-            gaps = skill_gaps[category][:3]  # Suggest top 3 missing skills
-            if gaps:
-                recommendations.append(f"Add {category} skills: {', '.join(gaps)}")
+        profile_parts = []
+        if education:
+            profile_parts.append(education.strip().capitalize())
+        if experience:
+            profile_parts.append(experience)
+        profile_summary = ' | '.join(profile_parts) if profile_parts else "No profile information found"
+        
+        skill_gaps = {}
+        for category in SKILL_CATEGORIES:
+            jd_skills = set(jd_categories.get(category, []))
+            resume_skills = set(resume_categories.get(category, []))
+            if jd_skills:
+                skill_gaps[category] = list(jd_skills - resume_skills)
+        
+        category_matches = {}
+        for category in SKILL_CATEGORIES:
+            jd_skills = set(jd_categories.get(category, []))
+            resume_skills = set(resume_categories.get(category, []))
+            if jd_skills:
+                match = len(jd_skills & resume_skills) / len(jd_skills) * 100
+                category_matches[category] = round(match, 1)
+        
+        recommendations = []
+        
+        if not education:
+            recommendations.append("Add your educational background prominently")
+        elif 'computer science' in education.lower() or 'cs' in education.lower():
+            recommendations.append("Your CS background is relevant - highlight any specialized coursework or projects")
+        
+        if not experience:
+            recommendations.append("Add any internships, projects, or relevant work experience")
+        elif 'internship' in experience.lower():
+            recommendations.append("Quantify your internship achievements with specific metrics")
+        elif any(str(i) in experience.lower() for i in range(1, 6)):
+            recommendations.append("Highlight leadership roles and team contributions in your experience")
+        
+        if not projects:
+            recommendations.append("Add relevant projects showcasing your technical skills")
+        elif len(projects) < 3:
+            recommendations.append("Consider adding more projects demonstrating your expertise")
+        
+        if not achievements:
+            recommendations.append("Add quantifiable achievements and metrics to strengthen your impact")
+        
+        tech_categories = ['Programming Languages', 'Web Technologies', 'Database', 'Cloud & DevOps']
+        missing_tech = [cat for cat in tech_categories if cat in skill_gaps and skill_gaps[cat]]
+        
+        if missing_tech:
+            for category in missing_tech[:2]:
+                gaps = skill_gaps[category][:3]
+                if gaps:
+                    recommendations.append(f"Add {category} skills: {', '.join(gaps)}")
    
-    if len(resume_text.split()) < 200:
-        recommendations.append("Your resume seems concise - consider adding more detail to your experiences")
+        if len(resume_text.split()) < 200:
+            recommendations.append("Your resume seems concise - consider adding more detail to your experiences")
+        
+        response = {
+            "JD Match": f"{match_percentage}%",
+            "Profile Summary": profile_summary,
+            "Key Strengths": key_strengths,
+            "Missing Keywords": missing_keywords[:5],
+            "Education": education.strip().capitalize() if education else "No education details found",
+            "Experience": experience.strip().capitalize() if experience else "No experience details found",
+            "Projects": projects if projects else [], 
+            "Achievements": achievements if achievements else [], 
+            "Category Matches": category_matches,
+            "Skill Gaps": skill_gaps,
+            "Recommendations": recommendations
+        }
+        
+        return json.dumps(response, indent=2)
     
-    response = {
-        "JD Match": f"{match_percentage}%",
-        "Profile Summary": profile_summary,
-        "Key Strengths": key_strengths,
-        "Missing Keywords": missing_keywords[:5],
-        "Education": education.strip().capitalize() if education else "No education details found",
-        "Experience": experience.strip().capitalize() if experience else "No experience details found",
-        "Projects": projects[:3] if projects else [], 
-        "Achievements": achievements[:3] if achievements else [], 
-        "Category Matches": category_matches,
-        "Skill Gaps": skill_gaps,
-        "Recommendations": recommendations
-    }
-    
-    return json.dumps(response, indent=2)
+    except Exception as e:
+        return json.dumps({"error": f"Analysis failed: {str(e)}"})
 
 # Streamlit App Interface
 st.markdown("""
@@ -445,96 +463,126 @@ st.markdown("""
     </div>
     """, unsafe_allow_html=True)
 
-st.markdown("## ATS Resume Evaluator")
-st.markdown("Upload your resume and job description to receive a tailored match percentage, keyword analysis, and improvement suggestions.")
-
 with st.container():
     col1, col2 = st.columns(2)
 
     with col1:
-        jd_input = st.text_area("Job Description", height=300, placeholder="Paste the JD here...")
+        jd_input = st.text_area("Job Description", height=300, placeholder="Paste the JD here...", 
+                              help="Minimum 50 characters required for meaningful analysis")
 
     with col2:
-        uploaded_resume = st.file_uploader("Upload Resume (PDF)", type=["pdf"])
+        uploaded_resume = st.file_uploader("Upload Resume (PDF)", type=["pdf"], 
+                                         help="PDF files only, maximum size 5MB")
 
-if st.button("Evaluate"):
-    if uploaded_resume and jd_input.strip():
+if st.button("Evaluate", type="primary"):
+    # Validate inputs
+    jd_text = jd_input.strip() if jd_input else ""
+    has_resume = uploaded_resume is not None and uploaded_resume.size > 0
+    has_valid_jd = len(jd_text) > 50  # Require meaningful JD content
+    
+    if not has_resume:
+        st.error("Please upload a resume (PDF format)")
+    if not has_valid_jd:
+        st.error("Please enter a job description (minimum 50 characters)")
+    
+    if has_resume and has_valid_jd:
         with st.spinner("Analyzing Resume..."):
-            resume_text = extract_pdf_text(uploaded_resume)
-            ats_response = get_ats_feedback(resume_text, jd_input)
-            
-            if ats_response:
+            try:
+                # Check file type
+                if not uploaded_resume.name.lower().endswith('.pdf'):
+                    st.error("Invalid file type. Please upload a PDF file.")
+                    st.stop()
+                
+                # Check file size (max 5MB)
+                if uploaded_resume.size > 5 * 1024 * 1024:
+                    st.error("File too large. Maximum size is 5MB.")
+                    st.stop()
+                
+                resume_text = extract_pdf_text(uploaded_resume)
+                
+                if not resume_text or len(resume_text.strip()) < 100:
+                    st.error("Could not extract meaningful text from PDF. Please ensure it's a text-based PDF.")
+                    st.stop()
+                
+                ats_response = get_ats_feedback(resume_text, jd_text)
+                results = json.loads(ats_response)
+                
+                if "error" in results:
+                    st.error(results["error"])
+                    st.stop()
+                
+                # Display results
                 st.markdown("---")
                 st.markdown("### ATS Evaluation Results")
-        
-        results = json.loads(ats_response)
-        
-        match_pct = float(results['JD Match'].strip('%'))
-        color = 'green' if match_pct >= 80 else 'orange' if match_pct >= 60 else 'red'
-        st.markdown(f"<h2 style='color: {color}; text-align: center;'>Overall Match: {results['JD Match']}</h2>", unsafe_allow_html=True)
-        
-        tab1, tab2, tab3 = st.tabs(["Overview", "Skills Analysis", "Recommendations"])
-        
-        with tab1:
-            st.markdown("### Profile Summary")
-            st.info(results['Profile Summary'])
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown("### Education")
-                st.write(results['Education'])
-            with col2:
-                st.markdown("### Experience")
-                st.write(results['Experience'])
-            
-            if results['Projects'] or results['Achievements']:
-                st.markdown("### Key Highlights")
                 
-                if results['Projects']:
-                    st.markdown("#### Notable Projects")
-                    for project in results['Projects']:
-                        st.markdown(f"* {project.capitalize()}")
+                match_pct = float(results['JD Match'].strip('%'))
+                color = 'green' if match_pct >= 80 else 'orange' if match_pct >= 60 else 'red'
+                st.markdown(f"<h2 style='color: {color}; text-align: center;'>Overall Match: {results['JD Match']}</h2>", unsafe_allow_html=True)
                 
-                if results['Achievements']:
-                    st.markdown("#### Key Achievements")
-                    for achievement in results['Achievements']:
-                        st.markdown(f"* {achievement.capitalize()}")
-        
-        with tab2:
-            st.markdown("### Skills by Category")
-            for category, match in results['Category Matches'].items():
-                col1, col2 = st.columns([3, 1])
-                with col1:
-                    progress_color = 'green' if match >= 80 else 'orange' if match >= 60 else 'red'
-                    st.markdown(f"**{category}**")
-                    st.progress(match/100)
-                with col2:
-                    st.markdown(f"<h4 style='color: {progress_color}'>{match}%</h4>", unsafe_allow_html=True)
+                tab1, tab2, tab3 = st.tabs(["Overview", "Skills Analysis", "Recommendations"])
                 
-                if category in results['Skill Gaps'] and results['Skill Gaps'][category]:
-                    st.caption(f"Missing: {', '.join(results['Skill Gaps'][category])}")
+                with tab1:
+                    st.markdown("### Profile Summary")
+                    st.info(results['Profile Summary'])
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.markdown("### Education")
+                        st.write(results['Education'])
+                    with col2:
+                        st.markdown("### Experience")
+                        st.write(results['Experience'])
+                    
+                    if results['Projects'] or results['Achievements']:
+                        st.markdown("### Key Highlights")
+                        
+                        if results['Projects']:
+                            st.markdown("#### Notable Projects")
+                            for project in results['Projects']:
+                                st.markdown(f"* {project.capitalize()}")
+                        
+                        if results['Achievements']:
+                            st.markdown("#### Key Achievements")
+                            for achievement in results['Achievements']:
+                                st.markdown(f"* {achievement.capitalize()}")
+                
+                with tab2:
+                    st.markdown("### Skills by Category")
+                    for category, match in results['Category Matches'].items():
+                        col1, col2 = st.columns([3, 1])
+                        with col1:
+                            progress_color = 'green' if match >= 80 else 'orange' if match >= 60 else 'red'
+                            st.markdown(f"**{category}**")
+                            st.progress(match/100)
+                        with col2:
+                            st.markdown(f"<h4 style='color: {progress_color}'>{match}%</h4>", unsafe_allow_html=True)
+                        
+                        if category in results['Skill Gaps'] and results['Skill Gaps'][category]:
+                            st.caption(f"Missing: {', '.join(results['Skill Gaps'][category])}")
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.markdown("### Key Strengths")
+                        for strength in results['Key Strengths']:
+                            st.markdown(f"+ {strength}")
+                    with col2:
+                        st.markdown("### Areas to Add")
+                        for keyword in results['Missing Keywords']:
+                            st.markdown(f"- {keyword}")
+                
+                with tab3:
+                    st.markdown("### Detailed Recommendations")
+                    for i, rec in enumerate(results['Recommendations'], 1):
+                        st.markdown(f"{i}. {rec}")
+                    
+                    st.markdown("### Pro Tips")
+                    st.info("""
+                    - Use industry-standard section headings
+                    - Include relevant certifications
+                    - Highlight achievements with metrics
+                    - Keep formatting simple and consistent
+                    """)
             
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown("### Key Strengths")
-                for strength in results['Key Strengths']:
-                    st.markdown(f"+ {strength}")
-            with col2:
-                st.markdown("### Areas to Add")
-                for keyword in results['Missing Keywords']:
-                    st.markdown(f"- {keyword}")
-        
-        with tab3:
-            st.markdown("### Detailed Recommendations")
-            for i, rec in enumerate(results['Recommendations'], 1):
-                st.markdown(f"{i}. {rec}")
-            
-            st.markdown("### Pro Tips")
-            st.info("""
-            - Use industry-standard section headings
-            - Include relevant certifications
-            - Highlight achievements with metrics
-            - Keep formatting simple and consistent
-            """)
-    else:
-        st.warning("Please upload a resume and enter a job description.")
+            except Exception as e:
+                st.error(f"An error occurred during analysis: {str(e)}")
+                st.stop()
