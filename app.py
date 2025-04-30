@@ -129,6 +129,7 @@ def extract_skills_and_keywords(text):
                         categorized_skills[category][skill] = max(
                             confidence,
                             categorized_skills[category].get(skill, 0)
+                        )
         
         stop_words = set(stopwords.words('english'))
         words = word_tokenize(text)
