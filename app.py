@@ -1,4 +1,5 @@
 import streamlit as st
+import nltk
 
 # Configure the Streamlit page settings
 st.set_page_config(
